@@ -25,7 +25,7 @@
   </main>
   <script>
   (()=>{'use strict';
-    const $=id=>document.getElementById(id),u=new URL(location.href),floor=Number(u.searchParams.get('floor')),token=u.searchParams.get('k')||'';
+    const $=id=>document.getElementById(id),u=new URL(location.href),floor=Number(u.searchParams.get('f')??u.searchParams.get('floor')),token=u.searchParams.get('t')||u.searchParams.get('k')||'';
     const presence=$('presence'),state=$('state'),call=$('call'),cancel=$('cancel'),network=$('network');
     const validFloor=Number.isInteger(floor)&&floor>=-1&&floor<=5;
     $('floor').textContent='Этаж '+(validFloor?floor:'—');
@@ -95,9 +95,9 @@
       }catch{state.textContent='Нет связи — отмена НЕ отправлена'}finally{busy=false;cancel.disabled=false}
     });
     addEventListener('online',refresh);addEventListener('offline',offline);
-    refresh();timer=setInterval(()=>{if(!document.hidden)refresh()},5000);
+    refresh();timer=setInterval(()=>{if(!document.hidden)refresh()},3000);
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()});
-    if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=20260903.2',{updateViaCache:'none'}).catch(()=>{});
+    if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=20260903.3',{updateViaCache:'none'}).catch(()=>{});
   })();
   </script>
 </body>
