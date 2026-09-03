@@ -1,7 +1,7 @@
 (()=>{'use strict';
   const app=document.getElementById('app'),logoutButton=document.getElementById('logout'),toastBox=document.getElementById('toast');
   const API='https://drxhccirijpaohsgltlm.supabase.co/functions/v1/bop-master-lift/api',FLOORS=[-1,0,1,2,3,4,5];
-  let session=readSession(),pollTimer=0,adminTab='overview',knownCalls=null,qrLoader=null,audioContext=null,soundReady=false,operatorLoading=false;
+  let session=readSession(),pollTimer=0,adminTab='overview',knownCalls=null,qrLoader=null,audioContext=null,soundReady=false,operatorLoading=false,bossLoading=false,adminLoading=false;
   const esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const time=value=>value?new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}).format(new Date(value)):'—';
   const statusLabel={waiting:'Ожидает',going:'ЕДУ',done:'Готово',cancelled:'Отменён'};
@@ -53,25 +53,27 @@
   async function primeSound(){try{if(!audioContext)audioContext=new(window.AudioContext||window.webkitAudioContext)();if(audioContext.state!=='running')await audioContext.resume?.();soundReady=audioContext.state==='running'}catch{soundReady=false}}
   function beep(){try{if(!audioContext||audioContext.state!=='running')return;const now=audioContext.currentTime;[0,.24,.48].forEach((delay,index)=>{const osc=audioContext.createOscillator(),gain=audioContext.createGain();osc.frequency.value=index===1?1040:880;gain.gain.setValueAtTime(.18,now+delay);gain.gain.exponentialRampToValueAtTime(.001,now+delay+.18);osc.connect(gain);gain.connect(audioContext.destination);osc.start(now+delay);osc.stop(now+delay+.19)})}catch{}}
   async function renderBoss(silent=false){
+    if(bossLoading)return;bossLoading=true;
     try{
       const data=await api('boss_dashboard',{accessKey:session.key});
       app.innerHTML=`${screenHead(data.name||'BOSS','Удалённый вызов лифта',data.available)}<div class="grid"><section class="card span4"><div class="metric-label">Текущий этаж лифта</div><div class="floor-now">${esc(data.current_floor)}</div></section><section class="card span8"><h2>Вызвать на этаж</h2>${floorButtons(data.current_floor,!data.available)}${!data.available?'<p class="error-line">Лифтёр сейчас не на месте</p>':''}</section><section class="card span7"><h2>Очередь</h2>${queueHtml(data.queue||[])}</section><section class="card span5"><h2>Ключ лифтёра</h2><div class="key-row"><div class="key-field">${esc(data.operator_key)}</div><button id="copy-operator" class="ghost">Копировать</button></div><button id="rotate-operator" class="button danger full">Создать новый ключ лифтёра</button><p class="muted" style="margin:10px 0 0">Старый ключ и открытая сессия сразу перестанут работать.</p></section></div>`;
       document.querySelectorAll('[data-floor]').forEach(button=>button.onclick=async()=>{await act('boss_call',{accessKey:session.key,floor:Number(button.dataset.floor)},'Вызов отправлен');renderBoss()});
       document.getElementById('copy-operator').onclick=()=>copy(data.operator_key);
       document.getElementById('rotate-operator').onclick=async()=>{if(confirm('Создать новый ключ? Старый ключ лифтёра сразу отключится.')){const key=await api('boss_rotate_operator',{accessKey:session.key});await copy(key);renderBoss()}};
-    }catch(e){if(e.status!==401&&!silent)toast('Не удалось обновить данные')}
+    }catch(e){if(e.status!==401&&!silent)toast('Не удалось обновить данные')}finally{bossLoading=false}
   }
   function adminTabs(){return`<div class="tabs no-print">${[['overview','Обзор'],['accounts','Аккаунты'],['qr','QR-коды'],['history','История']].map(([id,label])=>`<button class="tab ${adminTab===id?'active':''}" data-tab="${id}">${label}</button>`).join('')}</div>`}
   async function renderAdmin(silent=false){
+    if(adminLoading)return;adminLoading=true;
     try{
       const dashboard=await api('admin_dashboard',{accessKey:session.key});let body='';
       if(adminTab==='overview')body=`<div class="grid"><section class="card span3"><div class="metric-label">Вызовов сегодня</div><div class="metric">${dashboard.today}</div></section><section class="card span3"><div class="metric-label">Выполнено</div><div class="metric">${dashboard.done}</div></section><section class="card span3"><div class="metric-label">Активных</div><div class="metric">${dashboard.active}</div></section><section class="card span3"><div class="metric-label">Этаж лифта</div><div class="metric">${dashboard.current_floor}</div></section><section class="card span7"><h2>Активная очередь</h2>${queueHtml(dashboard.queue||[])}</section><section class="card span5"><h2>Ключ лифтёра</h2><div class="key-row"><div class="key-field">${esc(dashboard.operator_key)}</div><button id="copy-operator" class="ghost">Копировать</button></div><button id="rotate-operator" class="button danger full">Создать новый ключ лифтёра</button></section><section class="card span12"><h2>Вызовы по этажам сегодня</h2><div class="floor-buttons">${FLOORS.map(f=>`<div class="floor-button" style="display:grid;place-items:center">${f}<small>× ${dashboard.floors?.[f]||0}</small></div>`).join('')}</div></section></div>`;
       if(adminTab==='accounts'){const accounts=await api('admin_accounts',{accessKey:session.key});body=`<section class="card"><h2>BOSS-аккаунты</h2><form id="boss-form" class="boss-form"><input id="boss-name" class="input" placeholder="Имя или участок" maxlength="80" required><button class="button">Создать аккаунт</button></form><div class="account-list">${accounts.length?accounts.map(a=>`<article class="account"><div class="account-name">${esc(a.name)}</div><div class="account-key">${esc(a.key)}</div><div class="icon-actions"><button class="mini" data-copy="${esc(a.key)}">Копировать</button><button class="mini" data-rotate="${a.id}">Новый ключ</button><button class="mini danger" data-delete="${a.id}" data-name="${esc(a.name)}">Удалить</button></div></article>`).join(''):'<p class="muted">Аккаунтов пока нет</p>'}</div></section>`}
       if(adminTab==='history'){const history=await api('admin_history',{accessKey:session.key,limit:100});body=`<section class="card history"><h2>Последние 100 вызовов</h2><table><thead><tr><th>Время</th><th>Этаж</th><th>Статус</th><th>Источник</th></tr></thead><tbody>${history.map(row=>`<tr><td>${time(row.created_at)}</td><td><strong>${row.floor}</strong></td><td>${esc(statusLabel[row.status]||row.status)}</td><td>${row.source==='boss'?'<span class="badge boss">BOSS</span> '+esc(row.source_name||''):'Рабочий'}</td></tr>`).join('')}</tbody></table></section>`}
-      if(adminTab==='qr'){const qrs=await api('admin_qrs',{accessKey:session.key});await loadQr();const base=location.origin+'/worker.html';body=`<section class="card qr-print"><div class="screen-head no-print"><div><h2>QR-коды этажей</h2><p class="muted">Старые QR перестанут работать после пересоздания.</p></div><div class="actions"><button id="print-qrs" class="button secondary">Печать всех QR</button><button id="rotate-qrs" class="button danger">Пересоздать все семь QR</button></div></div><div class="qr-grid">${qrs.map(q=>{const url=base+'?floor='+q.floor+'&k='+encodeURIComponent(q.token);return`<article class="qr-card"><h3>Этаж ${q.floor}</h3>${window.BopQR.svg(url)}<div class="qr-url">${esc(url)}</div></article>`}).join('')}</div></section>`}
+      if(adminTab==='qr'){const qrs=await api('admin_qrs',{accessKey:session.key});await loadQr();const base=new URL('./w.html',location.href).href.split('?')[0];body=`<section class="card qr-print"><div class="screen-head no-print"><div><h2>QR-коды этажей</h2><p class="muted">Крупный стандартный QR для камеры iPhone. Старые QR перестанут работать после пересоздания.</p></div><div class="actions"><button id="print-qrs" class="button secondary">Печать всех QR</button><button id="rotate-qrs" class="button danger">Пересоздать все семь QR</button></div></div><div class="qr-grid">${qrs.map(q=>{const url=base+'?f='+q.floor+'&t='+encodeURIComponent(q.token);return`<article class="qr-card"><h3>Этаж ${q.floor}</h3>${qrSvg(url)}<div class="qr-url">${esc(url)}</div></article>`}).join('')}</div></section>`}
       app.innerHTML=`${screenHead('Администратор','Управление BOP MASTER Lift',dashboard.available)}${adminTabs()}${body}`;
       bindAdmin(dashboard);
-    }catch(e){if(e.status!==401&&!silent)toast('Не удалось обновить данные')}
+    }catch(e){if(e.status!==401&&!silent)toast('Не удалось обновить данные')}finally{adminLoading=false}
   }
   function bindAdmin(dashboard){
     document.querySelectorAll('[data-tab]').forEach(button=>button.onclick=()=>{adminTab=button.dataset.tab;renderAdmin()});
@@ -82,19 +84,20 @@
     document.querySelectorAll('[data-rotate]').forEach(button=>button.onclick=async()=>{if(confirm('Обновить ключ этого BOSS? Старая сессия отключится.')){const key=await api('admin_rotate_boss',{accessKey:session.key,bossId:Number(button.dataset.rotate)});await copy(key);renderAdmin()}});
     document.querySelectorAll('[data-delete]').forEach(button=>button.onclick=async()=>{if(confirm('Удалить аккаунт «'+button.dataset.name+'»?')){await api('admin_delete_boss',{accessKey:session.key,bossId:Number(button.dataset.delete)});renderAdmin()}});
     const print=document.getElementById('print-qrs');if(print)print.onclick=()=>window.print();
-    const rotateQr=document.getElementById('rotate-qrs');if(rotateQr)rotateQr.onclick=async()=>{if(confirm('Пересоздать все 7 QR? Все распечатанные старые QR сразу перестанут работать.')){await api('admin_rotate_qrs',{accessKey:session.key});toast('QR-коды пересозданы');renderAdmin()}};
+    const rotateQr=document.getElementById('rotate-qrs');if(rotateQr)rotateQr.onclick=async()=>{if(!confirm('Пересоздать все 7 QR? Все распечатанные старые QR сразу перестанут работать.'))return;rotateQr.disabled=true;rotateQr.textContent='Пересоздаём…';try{await api('admin_rotate_qrs',{accessKey:session.key});toast('Готово: все 7 QR пересозданы');await renderAdmin()}catch(e){if(e.status!==401)toast('Не удалось пересоздать QR')}finally{rotateQr.disabled=false;rotateQr.textContent='Пересоздать все семь QR'}};
   }
-  function loadQr(){if(window.BopQR)return Promise.resolve();if(qrLoader)return qrLoader;qrLoader=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='./qrcode.js?v=20260903.2';script.onload=resolve;script.onerror=reject;document.head.append(script)});return qrLoader}
+  function loadQr(){if(window.qrcode)return Promise.resolve();if(qrLoader)return qrLoader;qrLoader=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='./qrcode.js?v=20260903.3';script.onload=()=>window.qrcode?resolve():reject(new Error('qr_loader_failed'));script.onerror=reject;document.head.append(script)});return qrLoader}
+  function qrSvg(url){const code=window.qrcode(0,'M');code.addData(url,'Byte');code.make();return code.createSvgTag({cellSize:8,margin:32,scalable:true,alt:'QR-код вызова лифта'})}
   async function act(action,data,message){try{const result=await api(action,data);if(message)toast(message);return result}catch(e){if(e.status!==401)toast(e.message.includes('operator_unavailable')?'Лифтёр не на месте':'Действие не выполнено');throw e}}
   function start(){
     stopPoll();logoutButton.classList.remove('hidden');app.innerHTML='<div class="loading">Загрузка…</div>';
     const render=session.access==='operator'?renderOperator:session.access==='boss'?renderBoss:renderAdmin;
-    render();pollTimer=setInterval(()=>{if(!document.hidden&&!(session.access==='admin'&&adminTab!=='overview'))render(true)},session.access==='operator'?3000:session.access==='admin'?10000:5000);
+    render();pollTimer=setInterval(()=>{if(!document.hidden&&!(session.access==='admin'&&adminTab!=='overview'))render(true)},session.access==='admin'?5000:3000);
   }
   logoutButton.onclick=()=>{knownCalls=null;saveSession(null);renderLogin()};
   document.addEventListener('pointerdown',()=>{if(session?.access==='operator')primeSound()},{passive:true});
   document.addEventListener('visibilitychange',()=>{if(!document.hidden&&session)start()});
   addEventListener('online',()=>{if(session)start()});
-  if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=20260903.2',{updateViaCache:'none'}).catch(()=>{});
+  if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=20260903.3',{updateViaCache:'none'}).catch(()=>{});
   session?start():renderLogin();
 })();
