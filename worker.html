@@ -31,7 +31,7 @@
     $('floor').textContent='Этаж '+(validFloor?floor:'—');
     const ownKey=validFloor?'bop_lift_call_'+floor:'';
     const apiUrl='https://drxhccirijpaohsgltlm.supabase.co/functions/v1/bop-master-lift/api';
-    let busy=false,timer=0,lastStatus='';
+    let busy=false,timer=0,lastStatus='',autoAttempted=false;
 
     function setPresence(kind,text){presence.className='presence '+(kind||'');presence.lastElementChild.textContent=text}
     function own(){try{return JSON.parse(localStorage.getItem(ownKey)||'null')}catch{return null}}
@@ -63,23 +63,30 @@
       if(!available){state.textContent='Лифтёра сейчас нет. Можно идти пешком.';call.disabled=true;return}
       state.textContent='Лифт готов принять вызов';call.disabled=busy;
     }
-    async function refresh(){
-      if(!validFloor||!token){setPresence('error','QR-код недействителен');state.textContent='Отсканируйте QR-код возле лифта';call.disabled=true;return}
-      try{apply(await api('worker_status',{floor,floorToken:token}))}
-      catch(error){if(String(error.message).includes('invalid_floor_token')){setPresence('error','QR-код недействителен');state.textContent='Этот QR-код больше не работает';call.disabled=true}else offline()}
-    }
-    call.addEventListener('click',async()=>{
+    async function requestLift(){
       if(busy)return;busy=true;call.disabled=true;state.textContent='Отправляем вызов…';
       try{
         const result=await api('worker_request',{floor,floorToken:token});
         if(result?.created&&result.cancel_token)save({id:result.call.id,cancelToken:result.cancel_token});
         state.textContent=result?.call?.status==='going'?'Лифт едет':'Лифт вызван';
-        await refresh();
+        await refresh(false);
       }catch(error){
         if(String(error.message).includes('operator_unavailable')){setPresence('off','Лифтёра нет на месте');state.textContent='Лифтёра сейчас нет. Можно идти пешком.'}
         else offline();
       }finally{busy=false}
-    });
+    }
+    async function refresh(allowAuto=true){
+      if(!validFloor||!token){setPresence('error','QR-код недействителен');state.textContent='Отсканируйте QR-код возле лифта';call.disabled=true;return}
+      try{
+        const data=await api('worker_status',{floor,floorToken:token});apply(data);
+        if(allowAuto&&!autoAttempted){
+          autoAttempted=true;
+          if(data.available&&!data.call)await requestLift();
+        }
+      }
+      catch(error){if(String(error.message).includes('invalid_floor_token')){setPresence('error','QR-код недействителен');state.textContent='Этот QR-код больше не работает';call.disabled=true}else offline()}
+    }
+    call.addEventListener('click',requestLift);
     cancel.addEventListener('click',async()=>{
       const current=own();if(!current||busy)return;busy=true;cancel.disabled=true;state.textContent='Отменяем вызов…';
       try{
@@ -90,7 +97,7 @@
     addEventListener('online',refresh);addEventListener('offline',offline);
     refresh();timer=setInterval(()=>{if(!document.hidden)refresh()},5000);
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()});
-    if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=20260903.1',{updateViaCache:'none'}).catch(()=>{});
+    if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=20260903.2',{updateViaCache:'none'}).catch(()=>{});
   })();
   </script>
 </body>
