@@ -1,0 +1,30 @@
+.call-alert.active {
+  border-color: var(--yellow);
+  box-shadow: 0 0 0 2px #f5c40026, 0 14px 40px #0008;
+}
+
+.current-position .current-floor-value {
+  margin: 8px 0 14px;
+}
+
+.operator-tools {
+  margin-top: 14px;
+}
+
+.button.sound {
+  min-width: 185px;
+}
+
+@media (max-width: 420px) {
+  .next-floor {
+    align-items: flex-start;
+  }
+
+  .next-floor .eta {
+    font-size: 13px;
+  }
+
+  .button.sound {
+    min-width: 100%;
+  }
+}
