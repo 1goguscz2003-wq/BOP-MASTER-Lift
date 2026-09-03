@@ -10,7 +10,7 @@
   function stopPoll(){clearInterval(pollTimer);pollTimer=0}
   function toast(message){toastBox.textContent=message;toastBox.classList.add('show');clearTimeout(toastBox._timer);toastBox._timer=setTimeout(()=>toastBox.classList.remove('show'),2200)}
   async function api(action,data={}){
-    const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),9000);
+    const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
     try{
       const response=await fetch(API,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action,...data}),signal:controller.signal,cache:'no-store',credentials:'omit'});
       const json=await response.json().catch(()=>({error:'bad_response'}));
@@ -86,7 +86,7 @@
     const print=document.getElementById('print-qrs');if(print)print.onclick=()=>window.print();
     const rotateQr=document.getElementById('rotate-qrs');if(rotateQr)rotateQr.onclick=async()=>{if(!confirm('Пересоздать все 7 QR? Все распечатанные старые QR сразу перестанут работать.'))return;rotateQr.disabled=true;rotateQr.textContent='Пересоздаём…';try{await api('admin_rotate_qrs',{accessKey:session.key});toast('Готово: все 7 QR пересозданы');await renderAdmin()}catch(e){if(e.status!==401)toast('Не удалось пересоздать QR')}finally{rotateQr.disabled=false;rotateQr.textContent='Пересоздать все семь QR'}};
   }
-  function loadQr(){if(window.qrcode)return Promise.resolve();if(qrLoader)return qrLoader;qrLoader=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='./qrcode.js?v=20260903.3';script.onload=()=>window.qrcode?resolve():reject(new Error('qr_loader_failed'));script.onerror=reject;document.head.append(script)});return qrLoader}
+  function loadQr(){if(window.qrcode)return Promise.resolve();if(qrLoader)return qrLoader;qrLoader=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='./qrcode.js?v=20260903.4';script.onload=()=>window.qrcode?resolve():reject(new Error('qr_loader_failed'));script.onerror=reject;document.head.append(script)});return qrLoader}
   function qrSvg(url){const code=window.qrcode(0,'M');code.addData(url,'Byte');code.make();return code.createSvgTag({cellSize:8,margin:32,scalable:true,alt:'QR-код вызова лифта'})}
   async function act(action,data,message){try{const result=await api(action,data);if(message)toast(message);return result}catch(e){if(e.status!==401)toast(e.message.includes('operator_unavailable')?'Лифтёр не на месте':'Действие не выполнено');throw e}}
   function start(){
@@ -98,6 +98,6 @@
   document.addEventListener('pointerdown',()=>{if(session?.access==='operator')primeSound()},{passive:true});
   document.addEventListener('visibilitychange',()=>{if(!document.hidden&&session)start()});
   addEventListener('online',()=>{if(session)start()});
-  if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=20260903.3',{updateViaCache:'none'}).catch(()=>{});
+  if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=20260903.4',{updateViaCache:'none'}).catch(()=>{});
   session?start():renderLogin();
 })();
