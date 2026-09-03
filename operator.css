@@ -40,13 +40,6 @@
   background: #fff;
 }
 
-.qr-url {
-  margin-top: 10px;
-  color: #222;
-  font-size: 9px;
-  overflow-wrap: anywhere;
-}
-
 @media (max-width: 420px) {
   .next-floor {
     align-items: flex-start;
