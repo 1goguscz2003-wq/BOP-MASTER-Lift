@@ -1,7 +1,7 @@
 (()=>{'use strict';
   const app=document.getElementById('app'),logoutButton=document.getElementById('logout'),toastBox=document.getElementById('toast');
   const API='https://drxhccirijpaohsgltlm.supabase.co/functions/v1/bop-master-lift/api',FLOORS=[-1,0,1,2,3,4,5];
-  let session=readSession(),pollTimer=0,adminTab='overview',knownCalls=null,qrLoader=null;
+  let session=readSession(),pollTimer=0,adminTab='overview',knownCalls=null,qrLoader=null,audioContext=null,soundReady=false,operatorLoading=false;
   const esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const time=value=>value?new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}).format(new Date(value)):'—';
   const statusLabel={waiting:'Ожидает',going:'ЕДУ',done:'Готово',cancelled:'Отменён'};
@@ -30,24 +30,28 @@
     app.innerHTML=`<section class="login-wrap"><form id="login-form" class="login-card"><h1>Вход по ключу</h1><p class="muted">Введите выданный ключ доступа.</p><label for="access-key">Ключ доступа</label><input id="access-key" class="input" type="password" inputmode="text" autocomplete="current-password" required maxlength="128"><button class="button full" type="submit">Войти</button><p id="login-error" class="error-line">${esc(message)}</p></form></section>`;
     document.getElementById('login-form').addEventListener('submit',async event=>{
       event.preventDefault();const key=document.getElementById('access-key').value.trim(),button=event.currentTarget.querySelector('button'),error=document.getElementById('login-error');
-      if(!key)return;button.disabled=true;error.textContent='Проверяем ключ…';
+      if(!key)return;primeSound();button.disabled=true;error.textContent='Проверяем ключ…';
       try{const result=await api('login',{key});if(!result?.valid){error.textContent='Неверный ключ доступа';return}saveSession({key,access:result.access,name:result.name||''});start()}catch(e){error.textContent=e.status===429?'Слишком много попыток. Повторите через 10 минут.':'Нет связи. Попробуйте ещё раз.'}finally{button.disabled=false}
     });
     document.getElementById('access-key').focus();
   }
   function screenHead(title,sub,available){return`<div class="screen-head"><div><h1>${esc(title)}</h1><p class="muted">${esc(sub)}</p></div>${presence(available)}</div>`}
   async function renderOperator(silent=false){
+    if(operatorLoading)return;operatorLoading=true;
     try{
       const data=await api('operator_dashboard',{accessKey:session.key}),queue=data.queue||[],next=queue[0]||null,currentIds=new Set(queue.map(x=>String(x.id)));
-      if(knownCalls&&[...currentIds].some(id=>!knownCalls.has(id)))beep();knownCalls=currentIds;
-      app.innerHTML=`${screenHead('Панель лифтёра','Умная очередь и управление лифтом',data.available)}<div class="grid"><section class="card span5 hazard"><div class="next-floor"><div><div class="metric-label">Следующий этаж</div><div class="floor-now">${next?esc(next.floor):'—'}</div></div><div class="eta">${next?'ETA ≈ '+esc(next.eta_seconds)+' сек':'Вызовов нет'}</div></div><div class="actions" style="margin-top:18px"><button id="going" class="button big" ${!next||next.status==='going'?'disabled':''}>🚧 ЕДУ</button><button id="done" class="button green big" ${!next||next.status!=='going'?'disabled':''}>✅ ГОТОВО</button></div></section><section class="card span7"><h2>Текущий этаж: ${esc(data.current_floor)}</h2>${floorButtons(data.current_floor)}<div class="actions" style="margin-top:14px"><button id="availability" class="button ${data.available?'secondary':'green'}">${data.available?'⚫ НЕТ НА МЕСТЕ':'🟢 НА МЕСТЕ'}</button></div></section><section class="card span12"><h2>Очередь</h2>${queueHtml(queue)}</section></div>`;
+      const hasNew=knownCalls===null?queue.length>0:[...currentIds].some(id=>!knownCalls.has(id));knownCalls=currentIds;
+      if(hasNew){beep();try{navigator.vibrate?.([250,100,250])}catch{}}
+      app.innerHTML=`${screenHead('Панель лифтёра','Новые вызовы появляются автоматически',data.available)}<div class="grid"><section class="card span5 hazard call-alert ${next?'active':''}"><div class="next-floor"><div><div class="metric-label">${next?.status==='going'?'ЛИФТ ЕДЕТ НА ЭТАЖ':'НОВЫЙ ВЫЗОВ · ЭТАЖ'}</div><div class="floor-now">${next?esc(next.floor):'—'}</div></div><div class="eta">${next?'ETA ≈ '+esc(next.eta_seconds)+' сек':'Вызовов нет'}</div></div><div class="actions" style="margin-top:18px"><button id="going" class="button big" ${!next||next.status==='going'?'disabled':''}>🚧 ЕДУ</button><button id="done" class="button green big" ${!next||next.status!=='going'?'disabled':''}>✅ ГОТОВО</button></div></section><section class="card span7 current-position"><div class="metric-label">Я СЕЙЧАС НА ЭТАЖЕ</div><div class="floor-now current-floor-value">${esc(data.current_floor)}</div>${floorButtons(data.current_floor)}<div class="actions operator-tools"><button id="availability" class="button ${data.available?'secondary':'green'}">${data.available?'⚫ НЕТ НА МЕСТЕ':'🟢 НА МЕСТЕ'}</button><button id="sound-toggle" class="button sound ${soundReady?'green':'secondary'}">${soundReady?'🔊 ЗВУК ВКЛЮЧЁН':'🔇 ВКЛЮЧИТЬ ЗВУК'}</button></div></section><section class="card span12"><h2>Очередь</h2>${queueHtml(queue)}</section></div>`;
       document.getElementById('availability').onclick=async()=>{await act('operator_available',{accessKey:session.key,available:!data.available});renderOperator()};
-      document.querySelectorAll('[data-floor]').forEach(button=>button.onclick=async()=>{await act('operator_floor',{accessKey:session.key,floor:Number(button.dataset.floor)});renderOperator()});
+      document.getElementById('sound-toggle').onclick=async()=>{await primeSound();beep();toast(soundReady?'Звук уведомлений включён':'Звук заблокирован настройками телефона');const button=document.getElementById('sound-toggle');if(button){button.textContent=soundReady?'🔊 ЗВУК ВКЛЮЧЁН':'🔇 ВКЛЮЧИТЬ ЗВУК';button.className='button sound '+(soundReady?'green':'secondary')}};
+      document.querySelectorAll('[data-floor]').forEach(button=>button.onclick=async()=>{const floor=Number(button.dataset.floor);await act('operator_floor',{accessKey:session.key,floor},'Текущий этаж: '+floor);renderOperator()});
       document.getElementById('going').onclick=async()=>{if(next){await act('operator_going',{accessKey:session.key,callId:next.id});renderOperator()}};
       document.getElementById('done').onclick=async()=>{if(next){await act('operator_done',{accessKey:session.key,callId:next.id});renderOperator()}};
-    }catch(e){if(e.status!==401&&!silent)toast('Не удалось обновить данные')}
+    }catch(e){if(e.status!==401&&!silent)toast('Не удалось обновить данные')}finally{operatorLoading=false}
   }
-  function beep(){try{const audio=new(window.AudioContext||window.webkitAudioContext)(),osc=audio.createOscillator(),gain=audio.createGain();osc.frequency.value=880;gain.gain.setValueAtTime(.14,audio.currentTime);gain.gain.exponentialRampToValueAtTime(.001,audio.currentTime+.45);osc.connect(gain);gain.connect(audio.destination);osc.start();osc.stop(audio.currentTime+.45)}catch{}}
+  async function primeSound(){try{if(!audioContext)audioContext=new(window.AudioContext||window.webkitAudioContext)();if(audioContext.state!=='running')await audioContext.resume?.();soundReady=audioContext.state==='running'}catch{soundReady=false}}
+  function beep(){try{if(!audioContext||audioContext.state!=='running')return;const now=audioContext.currentTime;[0,.24,.48].forEach((delay,index)=>{const osc=audioContext.createOscillator(),gain=audioContext.createGain();osc.frequency.value=index===1?1040:880;gain.gain.setValueAtTime(.18,now+delay);gain.gain.exponentialRampToValueAtTime(.001,now+delay+.18);osc.connect(gain);gain.connect(audioContext.destination);osc.start(now+delay);osc.stop(now+delay+.19)})}catch{}}
   async function renderBoss(silent=false){
     try{
       const data=await api('boss_dashboard',{accessKey:session.key});
@@ -80,16 +84,17 @@
     const print=document.getElementById('print-qrs');if(print)print.onclick=()=>window.print();
     const rotateQr=document.getElementById('rotate-qrs');if(rotateQr)rotateQr.onclick=async()=>{if(confirm('Пересоздать все 7 QR? Все распечатанные старые QR сразу перестанут работать.')){await api('admin_rotate_qrs',{accessKey:session.key});toast('QR-коды пересозданы');renderAdmin()}};
   }
-  function loadQr(){if(window.BopQR)return Promise.resolve();if(qrLoader)return qrLoader;qrLoader=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='./qrcode.js?v=20260903.1';script.onload=resolve;script.onerror=reject;document.head.append(script)});return qrLoader}
+  function loadQr(){if(window.BopQR)return Promise.resolve();if(qrLoader)return qrLoader;qrLoader=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='./qrcode.js?v=20260903.2';script.onload=resolve;script.onerror=reject;document.head.append(script)});return qrLoader}
   async function act(action,data,message){try{const result=await api(action,data);if(message)toast(message);return result}catch(e){if(e.status!==401)toast(e.message.includes('operator_unavailable')?'Лифтёр не на месте':'Действие не выполнено');throw e}}
   function start(){
-    stopPoll();logoutButton.classList.remove('hidden');app.innerHTML='<div class="loading">Загрузка…</div>';knownCalls=null;
+    stopPoll();logoutButton.classList.remove('hidden');app.innerHTML='<div class="loading">Загрузка…</div>';
     const render=session.access==='operator'?renderOperator:session.access==='boss'?renderBoss:renderAdmin;
-    render();pollTimer=setInterval(()=>{if(!document.hidden&&!(session.access==='admin'&&adminTab!=='overview'))render(true)},session.access==='admin'?10000:5000);
+    render();pollTimer=setInterval(()=>{if(!document.hidden&&!(session.access==='admin'&&adminTab!=='overview'))render(true)},session.access==='operator'?3000:session.access==='admin'?10000:5000);
   }
-  logoutButton.onclick=()=>{saveSession(null);renderLogin()};
+  logoutButton.onclick=()=>{knownCalls=null;saveSession(null);renderLogin()};
+  document.addEventListener('pointerdown',()=>{if(session?.access==='operator')primeSound()},{passive:true});
   document.addEventListener('visibilitychange',()=>{if(!document.hidden&&session)start()});
   addEventListener('online',()=>{if(session)start()});
-  if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=20260903.1',{updateViaCache:'none'}).catch(()=>{});
+  if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=20260903.2',{updateViaCache:'none'}).catch(()=>{});
   session?start():renderLogin();
 })();
