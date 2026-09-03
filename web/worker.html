@@ -31,14 +31,14 @@
     $('floor').textContent='Этаж '+(validFloor?floor:'—');
     const ownKey=validFloor?'bop_lift_call_'+floor:'';
     const apiUrl='https://drxhccirijpaohsgltlm.supabase.co/functions/v1/bop-master-lift/api';
-    let busy=false,timer=0,lastStatus='',autoAttempted=false;
+    let busy=false,refreshing=false,timer=0,lastStatus='',autoAttempted=false;
 
     function setPresence(kind,text){presence.className='presence '+(kind||'');presence.lastElementChild.textContent=text}
     function own(){try{return JSON.parse(localStorage.getItem(ownKey)||'null')}catch{return null}}
     function save(v){try{v?localStorage.setItem(ownKey,JSON.stringify(v)):localStorage.removeItem(ownKey)}catch{}}
     function offline(){setPresence('error','Нет связи');state.textContent='Нет связи — вызов НЕ отправлен';call.disabled=true;network.textContent='Проверьте интернет и повторите';}
     async function api(action,data={}){
-      const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),8000);
+      const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
       try{
         const response=await fetch(apiUrl,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action,...data}),signal:controller.signal,cache:'no-store',credentials:'omit'});
         const json=await response.json().catch(()=>({}));
@@ -77,6 +77,7 @@
     }
     async function refresh(allowAuto=true){
       if(!validFloor||!token){setPresence('error','QR-код недействителен');state.textContent='Отсканируйте QR-код возле лифта';call.disabled=true;return}
+      if(refreshing)return;refreshing=true;
       try{
         const data=await api('worker_status',{floor,floorToken:token});apply(data);
         if(allowAuto&&!autoAttempted){
@@ -84,7 +85,7 @@
           if(data.available&&!data.call)await requestLift();
         }
       }
-      catch(error){if(String(error.message).includes('invalid_floor_token')){setPresence('error','QR-код недействителен');state.textContent='Этот QR-код больше не работает';call.disabled=true}else offline()}
+      catch(error){if(String(error.message).includes('invalid_floor_token')){setPresence('error','QR-код недействителен');state.textContent='Этот QR-код больше не работает';call.disabled=true}else offline()}finally{refreshing=false}
     }
     call.addEventListener('click',requestLift);
     cancel.addEventListener('click',async()=>{
@@ -97,7 +98,7 @@
     addEventListener('online',refresh);addEventListener('offline',offline);
     refresh();timer=setInterval(()=>{if(!document.hidden)refresh()},3000);
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()});
-    if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=20260903.3',{updateViaCache:'none'}).catch(()=>{});
+    if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js?v=20260903.4',{updateViaCache:'none'}).catch(()=>{});
   })();
   </script>
 </body>
