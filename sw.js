@@ -1,1 +1,10 @@
-const CACHE='bop-lift-v5';const ASSETS=['./','./index.html','./login.js','./call.html','./operator.html','./admin.html','./boss.html','./boss.js','./operator.js','./admin.js','./call.js','./styles.css','./config.js'];self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))));self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))));self.addEventListener('fetch',e=>{if(e.request.method!=='GET')return;e.respondWith(fetch(e.request).then(r=>{const c=r.clone();caches.open(CACHE).then(x=>x.put(e.request,c));return r}).catch(()=>caches.match(e.request)))})
+const CACHE='bop-master-lift-static-20260903-1';
+const STATIC_RE=/\/(app\.css|app\.js|qrcode\.js|manifest\.webmanifest|icon\.svg)$/;
+self.addEventListener('install',event=>{self.skipWaiting()});
+self.addEventListener('activate',event=>event.waitUntil((async()=>{for(const key of await caches.keys())if(key!==CACHE)await caches.delete(key);await self.clients.claim()})()));
+self.addEventListener('fetch',event=>{
+  const url=new URL(event.request.url);
+  if(event.request.method!=='GET'||url.origin!==location.origin||!STATIC_RE.test(url.pathname))return;
+  event.respondWith((async()=>{const cache=await caches.open(CACHE),cached=await cache.match(event.request);const fresh=fetch(event.request).then(response=>{if(response.ok)cache.put(event.request,response.clone());return response}).catch(()=>cached);return cached||fresh})());
+});
+self.addEventListener('message',event=>{if(event.data==='SKIP_WAITING')self.skipWaiting()});
