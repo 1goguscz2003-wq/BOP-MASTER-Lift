@@ -1,4 +1,4 @@
-const CACHE='bop-master-lift-static-20260903-4';
+const CACHE='bop-master-lift-static-20260903-5';
 const STATIC_RE=/\/(app\.css|operator\.css|app\.js|qrcode\.js|manifest\.webmanifest|icon\.svg)$/;
 self.addEventListener('install',event=>{self.skipWaiting()});
 self.addEventListener('activate',event=>event.waitUntil((async()=>{for(const key of await caches.keys())if(key!==CACHE)await caches.delete(key);await self.clients.claim()})()));
